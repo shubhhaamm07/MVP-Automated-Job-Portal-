@@ -1,0 +1,58 @@
+name: nextrole
+services:
+  mongodb:
+    build:
+      context: .
+      dockerfile: docker/mongo/Dockerfile
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: nextrole
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Copy .env.example to .env and set MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --host 127.0.0.1 --username nextrole --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'db.adminCommand({ping:1}).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: ./server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 7878
+      # Use a hex password as described in .env.example, so it is URI-safe.
+      MONGODB_URI: mongodb://nextrole:${MONGO_ROOT_PASSWORD}@mongodb:27017/job_portal?authSource=admin
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8088,http://localhost:5173}
+      SYNC_ON_START: ${SYNC_ON_START:-true}
+      SYNC_TOKEN: ${SYNC_TOKEN:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7878/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8088}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mongo_data:

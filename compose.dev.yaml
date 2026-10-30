@@ -1,0 +1,5 @@
+# Use with: docker compose -f compose.yaml -f compose.dev.yaml up -d mongodb
+services:
+  mongodb:
+    ports:
+      - "127.0.0.1:27017:27017"
